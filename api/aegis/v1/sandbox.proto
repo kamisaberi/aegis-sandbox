@@ -1,0 +1,128 @@
+// api/aegis/v1/sandbox.proto
+// Protocol Buffer Definition for aegis-sandbox gRPC Control Plane API
+// Author: Kamran Saberifard
+// License: Apache 2.0
+
+syntax = "proto3";
+
+package aegis.v1;
+
+option go_package = "github.com/kamisaberi/aegis-sandbox/api/v1;aegisv1";
+
+// AegisSandboxService provides microVM lifecycle management and isolated code execution for AI agents.
+service AegisSandboxService {
+  // Creates and initializes an isolated microVM sandbox instance.
+  rpc CreateSandbox(CreateSandboxRequest) returns (CreateSandboxResponse);
+
+  // Executes untrusted code (Python/Bash) inside an isolated sandbox environment.
+  rpc ExecuteCode(ExecuteCodeRequest) returns (ExecuteCodeResponse);
+
+  // Streams real-time execution stdout, stderr, and eBPF security events.
+  rpc StreamExecution(ExecuteCodeRequest) returns (stream ExecutionEvent);
+
+  // Dynamically applies or updates eBPF syscall & network security policies.
+  rpc ApplyPolicy(ApplyPolicyRequest) returns (ApplyPolicyResponse);
+
+  // Terminates a sandbox instance and wipes associated VRAM/RAM resources.
+  rpc TerminateSandbox(TerminateSandboxRequest) returns (TerminateSandboxResponse);
+}
+
+// Runtime environment type for the sandbox.
+enum RuntimeEnvironment {
+  RUNTIME_ENVIRONMENT_UNSPECIFIED = 0;
+  RUNTIME_ENVIRONMENT_PYTHON_311  = 1;
+  RUNTIME_ENVIRONMENT_BASH        = 2;
+  RUNTIME_ENVIRONMENT_NODE_JS     = 3;
+}
+
+// Resource limits for microVM instances.
+message ResourceLimits {
+  uint32 cpu_cores = 1;          // Number of vCPUs (e.g., 1 or 2)
+  uint32 memory_mb = 2;          // RAM limit in Megabytes (e.g., 512 or 2048)
+  uint32 vram_mb   = 3;          // GPU VRAM allocation limit in Megabytes (0 if CPU only)
+  uint32 timeout_seconds = 4;    // Maximum wall-clock execution timeout
+}
+
+// Security policy configuration attached to a sandbox.
+message SecurityPolicySpec {
+  string policy_name = 1;
+  bool block_all_network_egress = 2;
+  bool block_cloud_metadata_ips = 3;  // Blocks 169.254.169.254 metadata endpoint
+  repeated string allowed_sys_calls = 4; // Whitelisted Linux syscalls
+  repeated string blocked_sys_calls = 5; // Blacklisted Linux syscalls
+}
+
+// Request to create a new microVM sandbox.
+message CreateSandboxRequest {
+  string sandbox_id = 1;               // Unique sandbox identifier
+  RuntimeEnvironment environment = 2;  // Target runtime engine
+  ResourceLimits limits = 3;           // Resource constraints
+  SecurityPolicySpec policy = 4;       // Security policy spec
+  bool enable_snapshot_restore = 5;    // Enable sub-10ms snapshot boot
+}
+
+// Response containing created sandbox metadata.
+message CreateSandboxResponse {
+  string sandbox_id = 1;
+  bool success = 2;
+  double boot_time_ms = 3;             // Measured microVM boot time in milliseconds
+  string microvm_ip = 4;              // Guest network IP address
+  string error_message = 5;
+}
+
+// Request to execute code inside a running sandbox.
+message ExecuteCodeRequest {
+  string sandbox_id = 1;
+  string code_payload = 2;             // Python script or Bash command string
+  repeated string cli_arguments = 3;   // Optional command-line arguments
+  map<string, string> environment_variables = 4; // Environment variables
+}
+
+// Response from code execution.
+message ExecuteCodeResponse {
+  string sandbox_id = 1;
+  int32 exit_code = 2;                 // Execution exit code (0 = success)
+  string stdout = 3;                   // Captured standard output
+  string stderr = 4;                   // Captured standard error
+  double execution_time_ms = 5;       // Total execution duration
+  bool security_violation_triggered = 6; // True if eBPF killed the process
+}
+
+// Event stream message for real-time monitoring.
+message ExecutionEvent {
+  string sandbox_id = 1;
+  int64 timestamp_ns = 2;
+  
+  enum EventType {
+    EVENT_TYPE_UNSPECIFIED = 0;
+    EVENT_TYPE_STDOUT      = 1;
+    EVENT_TYPE_STDERR      = 2;
+    EVENT_TYPE_EBPF_ALERT  = 3; // eBPF security violation alert
+  }
+  
+  EventType type = 3;
+  string payload = 4;
+  string security_rule_violated = 5; // Details if eBPF blocked a syscall
+}
+
+// Request to apply a dynamic security policy.
+message ApplyPolicyRequest {
+  string sandbox_id = 1;
+  SecurityPolicySpec policy = 2;
+}
+
+message ApplyPolicyResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// Request to terminate a sandbox.
+message TerminateSandboxRequest {
+  string sandbox_id = 1;
+  bool force_wipe_memory = 2;
+}
+
+message TerminateSandboxResponse {
+  bool success = 1;
+  string error_message = 2;
+}
