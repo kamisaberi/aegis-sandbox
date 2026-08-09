@@ -1,0 +1,95 @@
+# policy/strict_python.yaml
+# Production Security Policy for Python 3.11 AI Agent Execution in aegis-sandbox
+# Author: Kamran Saberifard
+# License: Apache 2.0
+
+policy_name: "strict_python"
+description: "Strict whitelisting policy for Python 3.11 AI agents. Blocks kernel manipulation, debugging, and cloud metadata exfiltration."
+max_execution_time_sec: 15
+
+# ------------------------------------------------------------------------------
+# 1. Network Egress Rules (Anti-SSRF Protection)
+# ------------------------------------------------------------------------------
+network_rules:
+  block_all_network_egress: false
+  block_cloud_metadata_ips: true # Drops connections to 169.254.169.254
+  
+  blocked_cidrs:
+    - "169.254.169.254/32"  # AWS / Azure / GCP Metadata Instance IP
+    - "10.0.0.0/8"          # RFC 1918 Private Subnet
+    - "172.16.0.0/12"       # RFC 1918 Private Subnet
+    - "192.168.0.0/16"      # RFC 1918 Private Subnet
+
+# ------------------------------------------------------------------------------
+# 2. Linux System Call Rules (x86_64 eBPF Kernel Policy)
+# ------------------------------------------------------------------------------
+syscall_rules:
+  default_mode: "strict_whitelist" # Deny any syscall not explicitly whitelisted
+
+  # Whitelisted Syscalls required for Python 3.11 execution
+  allowed_sys_calls:
+    # Memory Management & File I/O
+    - "read"
+    - "write"
+    - "openat"
+    - "close"
+    - "fstat"
+    - "lseek"
+    - "mmap"
+    - "mprotect"
+    - "munmap"
+    - "brk"
+    - "fcntl"
+    - "getcwd"
+    - "chdir"
+    - "statx"
+    - "access"
+
+    # Signal Handling & Process Execution
+    - "rt_sigaction"
+    - "rt_sigprocmask"
+    - "sigaltstack"
+    - "ioctl"
+    - "futex"
+    - "exit_group"
+    - "exit"
+    - "getrandom"
+
+    # Process Identity & Threading
+    - "getuid"
+    - "getgid"
+    - "geteuid"
+    - "getegid"
+    - "getpid"
+    - "getppid"
+    - "gettid"
+
+    # I/O Multiplexing & Networking
+    - "epoll_create1"
+    - "epoll_ctl"
+    - "epoll_wait"
+    - "poll"
+    - "select"
+    - "pselect6"
+    - "socket"
+    - "connect"
+    - "recvfrom"
+    - "sendto"
+    - "getsockopt"
+    - "setsockopt"
+
+  # Explicitly Blocked High-Risk Syscalls (Triggers eBPF SIGKILL)
+  blocked_sys_calls:
+    - "ptrace"            # Prevent process memory injection & debugging
+    - "bpf"               # Prevent eBPF map/program manipulation from inside microVM
+    - "init_module"       # Block kernel module loading
+    - "finit_module"      # Block kernel module loading from FD
+    - "delete_module"     # Block kernel module unloading
+    - "kexec_load"        # Block kernel replacement
+    - "kexec_file_load"   # Block kernel replacement
+    - "pivot_root"        # Prevent filesystem root escapes
+    - "chroot"            # Prevent directory escapes
+    - "reboot"            # Block microVM reboot command
+    - "sysfs"             # Block direct kernel sysfs inspection
+    - "iopl"              # Block hardware port I/O access
+    - "ioperm"            # Block hardware port permission alteration
