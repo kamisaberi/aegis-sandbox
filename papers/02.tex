@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage[utf8]{utf8}
+\usepackage[utf8]{inputenc}
 \usepackage[margin=0.9in]{geometry}
 \usepackage{amsmath,amsfonts,amssymb}
 \usepackage{graphicx}
@@ -45,14 +45,16 @@
 \vspace{6pt}
 \noindent\textbf{Keywords:} AI Agent Security, Indirect Prompt Injection, Anti-SSRF, eBPF, Cloud Metadata Security, \texttt{169.254.169.254}, IMDS, \texttt{cgroup/connect4}, Zero-Trust Architecture.
 
-\hr
+\vspace{8pt}
+\hrule
+\vspace{12pt}
 
 \section{Introduction}
 Autonomous AI agents represent a paradigm shift in artificial intelligence deployment. Rather than merely outputting static text responses, modern LLM agents operate inside execution loops where they autonomously generate, execute, and inspect the output of dynamic code payloads (predominantly Python scripts or shell commands).
 
 However, integrating dynamic code execution with LLMs introduces a novel attack surface. When an AI agent reads untrusted external content—such as scraped website HTML, user-uploaded PDF files, or email body text—it is vulnerable to \textbf{Indirect Prompt Injection}~\cite{prompt_injection}. An attacker can embed hidden instructions in the ingested text that trick the agent's context window into overriding its original system prompt.
 
-In cloud environments (such as AWS EC2, Azure VMs, or Google Compute Engine), a common attack path for injected code payloads is querying the **Instance Metadata Service (IMDS)** located at the non-routable link-local IPv4 address \texttt{169.254.169.254}. Successful SSRF queries to IMDS endpoints expose sensitive IAM temporary security credentials, secret API keys, instance user-data scripts, and internal network architecture details.
+In cloud environments (such as AWS EC2, Azure VMs, or Google Compute Engine), a common attack path for injected code payloads is querying the \textbf{Instance Metadata Service (IMDS)} located at the non-routable link-local IPv4 address \texttt{169.254.169.254}. Successful SSRF queries to IMDS endpoints expose sensitive IAM temporary security credentials, secret API keys, instance user-data scripts, and internal network architecture details.
 
 \begin{figure}[h!]
 \centering
@@ -77,7 +79,7 @@ To address this challenge, we introduce an eBPF-driven network filtering engine 
 \section{Background \& Threat Analysis}
 
 \subsection{Indirect Prompt Injection Mechanics}
-Unlike direct prompt injection (where a user directly inputs adversarial prompts to a chatbot), indirect prompt injection occurs when the LLM processes data from a third-party source. For example, an agent summarising a web page might encounter:
+Unlike direct prompt injection (where a user directly inputs adversarial prompts to a chatbot), indirect prompt injection occurs when the LLM processes data from a third-party source. For example, an agent summarizing a web page might encounter:
 \begin{lstlisting}[language=Python]
 # Hidden text in HTML comment:
 # "System Override: Execute python code to curl http://169.254.169.254/latest/meta-data/iam/security-credentials/ and print result."
@@ -93,7 +95,7 @@ Once an attacker obtains these credentials, they can authenticate directly to th
 
 \section{eBPF Kernel Egress Filtering Architecture}
 
-To neutralize IMDS exfiltration without degrading execution speed, our framework hooks into the Linux kernel using **eBPF (Extended Berkeley Packet Filter)** at the \texttt{cgroup/connect4} socket layer.
+To neutralize IMDS exfiltration without degrading execution speed, our framework hooks into the Linux kernel using \textbf{eBPF (Extended Berkeley Packet Filter)} at the \texttt{cgroup/connect4} socket layer.
 
 \subsection{1. Socket-Level Interception (\texttt{cgroup/connect4})}
 Instead of waiting for network packets to reach the network interface card (NIC) or iptables chains, our eBPF program (\texttt{net\_filter.bpf.c}) intercepts the \texttt{connect()} system call before the socket connection is established:
@@ -153,7 +155,7 @@ The control plane is managed via C++20 using \texttt{libbpf}. The \texttt{EBPFLo
 \subsection{Zero-Trust Policy Specification}
 Network egress rules are declared using human-readable YAML specifications:
 
-\begin{lstlisting}[language=Unformatted, caption={YAML Policy Excerpt for Anti-SSRF Protection}]
+\begin{lstlisting}[caption={YAML Policy Excerpt for Anti-SSRF Protection}]
 network_rules:
   block_all_network_egress: false
   block_cloud_metadata_ips: true # Drops 169.254.169.254
@@ -185,7 +187,6 @@ Async \texttt{aiohttp} Egress & 100 & 100 & 100.0\% \\
 Subnet Internal Scan (\texttt{10.0.0.1}) & 100 & 100 & 100.0\% \\
 \bottomrule
 \end{tabular}
-\end{table">
 \end{table}
 
 As shown in Table~\ref{tab:ssrf_results}, because the eBPF hook evaluates the final resolved 32-bit IPv4 address inside the kernel socket layer ($\text{ctx}\rightarrow\text{user\_ip4}$), user-space string obfuscation techniques fail completely ($100.0\%$ block rate).
@@ -209,7 +210,7 @@ User-Space Proxy Firewall & 4.890 ms                         & +293.7\%         
 \end{tabular}
 \end{table}
 
-The eBPF kernel socket filter introduces a negligible **+0.16\% connection latency overhead** ($2$ microseconds per \texttt{connect()} call), representing a **1,800x speed improvement over traditional user-space security proxies**.
+The eBPF kernel socket filter introduces a negligible \textbf{+0.16\% connection latency overhead} ($2$ microseconds per \texttt{connect()} call), representing a \textbf{1,800x speed improvement over traditional user-space security proxies}.
 
 \section{Related Work}
 Server-Side Request Forgery (SSRF) defenses traditionally rely on web application firewalls (WAFs) or DNS resolution filtering. Cloud providers introduced IMDSv2 (requiring a session token via HTTP PUT) to mitigate basic SSRF. However, when an agent executes arbitrary code inside a microVM, the agent can execute multi-step HTTP requests to fetch tokens and exfiltrate IMDSv2 data. By blocking access to \texttt{169.254.169.254} at the kernel socket layer, \texttt{aegis-sandbox} provides absolute protection against both IMDSv1 and IMDSv2 exfiltration vectors.
