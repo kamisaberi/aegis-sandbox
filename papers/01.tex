@@ -1,6 +1,6 @@
-\documentclass[10pt,twocolumn,a4paper]{article}
+\documentclass[11pt,a4paper]{article}
 \usepackage[utf8]{utf8}
-\usepackage[margin=0.65in]{geometry}
+\usepackage[margin=0.9in]{geometry}
 \usepackage{amsmath,amsfonts,amssymb}
 \usepackage{graphicx}
 \usepackage{hyperref}
@@ -8,6 +8,9 @@
 \usepackage{booktabs}
 \usepackage{xcolor}
 \usepackage{cite}
+\usepackage{setspace}
+
+\setstretch{1.15}
 
 \hypersetup{
     colorlinks=true,
@@ -17,7 +20,7 @@
 }
 
 \lstset{
-    basicstyle=\ttfamily\footnotesize,
+    basicstyle=\ttfamily\small,
     breaklines=true,
     frame=single,
     keywordstyle=\color{blue},
@@ -25,10 +28,10 @@
     stringstyle=\color{orange}
 }
 
-\title{\textbf{aegis-sandbox: Low-Latency MicroVM and eBPF Runtime Isolation for Autonomous AI Agent Execution Environments}}
+\title{\Large\bfseries aegis-sandbox: Low-Latency MicroVM and eBPF Runtime Isolation for Autonomous AI Agent Execution Environments}
 
 \author{
-    \textbf{Kamran Saberifard}\\
+    \textbf{Kamran Saberifard}\\[4pt]
     Department of Computer Engineering (Cybersecurity), MehrAstan University, Guilan, Iran\\
     Aryorithm Group — Global AI Infrastructure \& Security Research\\
     \href{mailto:kamisaberi@gmail.com}{kamisaberi@gmail.com} \quad|\quad ORCID: \href{https://orcid.org/0009-0002-7822-6168}{0009-0002-7822-6168}
@@ -41,19 +44,22 @@
 \maketitle
 
 \begin{abstract}
-Autonomous AI agents equipped with code-interpreter tools frequently synthesize and execute dynamic Python, Bash, and SQL code to solve complex tasks. When agents are hijacked via indirect prompt injection or jailbreak attacks, adversaries can exploit code-execution capabilities to run arbitrary system commands, exfiltrate cloud provider credentials, or compromise underlying host OS kernels. Traditional isolation mechanisms present a fundamental trade-off: OCI container environments (e.g., Docker) share the host kernel and remain vulnerable to container escape exploits, whereas full virtual machines introduce prohibitive cold-boot startup latencies ($>2.5$ seconds) that disrupt real-time agent workflows. In this paper, we present \textbf{aegis-sandbox}, an open-source, ultra-low-latency runtime isolation engine engineered specifically for autonomous AI agents. \texttt{aegis-sandbox} bridges the speed-security gap by combining Firecracker KVM microVM memory snapshot pre-warming with real-time Linux kernel eBPF tracepoint filtering and Cgroups v2 resource constraints. Our framework enforces zero-trust execution boundaries by intercepting non-whitelisted system calls, blocking Server-Side Request Forgery (SSRF) network egress to cloud metadata endpoints (\texttt{169.254.169.254}), and terminating policy-violating processes via kernel-level \texttt{SIGKILL}. Empirical evaluation demonstrates that \texttt{aegis-sandbox} achieves cold-start sandbox provisioning in \textbf{8.4 ms} with less than 1.8\% execution latency penalty compared to un-isolated host execution.
+\noindent Autonomous AI agents equipped with code-interpreter tools frequently synthesize and execute dynamic Python, Bash, and SQL code to solve complex tasks. When agents are hijacked via indirect prompt injection or jailbreak attacks, adversaries can exploit code-execution capabilities to run arbitrary system commands, exfiltrate cloud provider credentials, or compromise underlying host OS kernels. Traditional isolation mechanisms present a fundamental trade-off: OCI container environments (e.g., Docker) share the host kernel and remain vulnerable to container escape exploits, whereas full virtual machines introduce prohibitive cold-boot startup latencies ($>2.5$ seconds) that disrupt real-time agent workflows. In this paper, we present \textbf{aegis-sandbox}, an open-source, ultra-low-latency runtime isolation engine engineered specifically for autonomous AI agents. \texttt{aegis-sandbox} bridges the speed-security gap by combining Firecracker KVM microVM memory snapshot pre-warming with real-time Linux kernel eBPF tracepoint filtering and Cgroups v2 resource constraints. Our framework enforces zero-trust execution boundaries by intercepting non-whitelisted system calls, blocking Server-Side Request Forgery (SSRF) network egress to cloud metadata endpoints (\texttt{169.254.169.254}), and terminating policy-violating processes via kernel-level \texttt{SIGKILL}. Empirical evaluation demonstrates that \texttt{aegis-sandbox} achieves cold-start sandbox provisioning in \textbf{8.4 ms} with less than 1.8\% execution latency penalty compared to un-isolated host execution.
 \end{abstract}
 
-\textbf{Keywords:} AI Agent Security, Firecracker MicroVM, eBPF, Sandbox Isolation, Syscall Filtering, Anti-SSRF, Prompt Injection Defense, Zero-Trust Architecture.
+\vspace{6pt}
+\noindent\textbf{Keywords:} AI Agent Security, Firecracker MicroVM, eBPF, Sandbox Isolation, Syscall Filtering, Anti-SSRF, Prompt Injection Defense, Zero-Trust Architecture.
+
+\hr
 
 \section{Introduction}
 The rapid evolution of Large Language Model (LLM) agents—such as AutoGPT, LangChain Agents, and automated Code Interpreter pipelines—has shifted AI applications from static text generation to autonomous task execution. These agents operate by iteratively planning, generating executable code (predominantly Python and Bash), running the code in an execution environment, and inspecting the output to determine subsequent steps.
 
-However, giving AI models arbitrary code-execution capabilities creates severe security vulnerabilities. When an LLM processes untrusted external data (e.g., web pages, user-uploaded documents, database queries), it is vulnerable to \textbf{indirect prompt injection attacks}~\cite{prompt_injection}. In these scenarios, an adversary embeds malicious instructions that manipulate the agent into generating harmful code payload—such as executing reverse shells, scanning internal networks, or reading host environment variables.
+However, giving AI models arbitrary code-execution capabilities creates severe security vulnerabilities. When an LLM processes untrusted external data (e.g., web pages, user-uploaded documents, database queries), it is vulnerable to \textbf{indirect prompt injection attacks}~\cite{prompt_injection}. In these scenarios, an adversary embeds malicious instructions that manipulate the agent into generating harmful code payloads—such as executing reverse shells, scanning internal networks, or reading host environment variables.
 
-\begin{figure}[h]
+\begin{figure}[h!]
 \centering
-\fbox{\parbox{0.92\linewidth}{
+\fbox{\parbox{0.88\linewidth}{
 \small
 \textbf{[ Adversarial Web Page / User Prompt ]}\\
 $\Downarrow$ \textit{(Indirect Prompt Injection)}\\
@@ -63,14 +69,14 @@ $\Downarrow$ \textit{(Synthesizes Malicious Python/Bash Code)}\\
 $\Downarrow$ \textit{(Intercepted by eBPF \& MicroVM KVM Boundary)}\\
 \textbf{\textcolor{red}{[ ATTACK DEFENDED: Process SIGKILL + Network Block ]}}
 }}
-\caption{Attack Vector & \texttt{aegis-sandbox} Isolation Pipeline.}
+\caption{Attack Vector \& \texttt{aegis-sandbox} Isolation Pipeline.}
 \label{fig:attack_pipeline}
 \end{figure}
 
 \subsection{The Speed vs. Security Dilemma}
 Existing isolation approaches fail to meet the requirements of production AI agent platforms:
 \begin{enumerate}
-    \item \textbf{Container Isolation (Docker / OCI):} Shares the host Linux kernel. A single zero-day kernel vulnerability or misconfigured cap capability (e.g., \texttt{CAP\_SYS\_ADMIN}) allows complete host compromise.
+    \item \textbf{Container Isolation (Docker / OCI):} Shares the host Linux kernel. A single zero-day kernel vulnerability or misconfigured capability (e.g., \texttt{CAP\_SYS\_ADMIN}) allows complete host compromise.
     \item \textbf{Traditional Virtual Machines (QEMU / KVM):} Provides strong hardware-level isolation, but introduces multi-second boot latencies ($2,000\text{--}5,000$ ms) and heavy memory overheads, making them unusable for interactive agent loops.
     \item \textbf{WebAssembly (WASM):} Offers fast startup but restricts access to native Python C-extensions (\texttt{NumPy}, \texttt{SciPy}, \texttt{PyTorch}), limiting agent capabilities.
 \end{enumerate}
@@ -92,7 +98,7 @@ We define a threat model where an autonomous AI agent operates on behalf of ente
 \texttt{aegis-sandbox} employs a multi-layered defense-in-depth architecture combining four core technologies: Firecracker KVM microVMs, eBPF kernel probes, Linux Cgroups v2, and a native C++20/Go control plane.
 
 \subsection{1. Sub-10ms Firecracker MicroVM Provisioning}
-\texttt{aegis-sandbox} utilizes minimal Firecracker microVMs running uncompressed Linux 6.6 kernels. To eliminate microVM boot overhead, we implement a **Snapshot Pre-Warming System**. 
+\texttt{aegis-sandbox} utilizes minimal Firecracker microVMs running uncompressed Linux 6.6 kernels. To eliminate microVM boot overhead, we implement a \textbf{Snapshot Pre-Warming System}. 
 
 During system initialization, a base microVM is booted, Python 3.11 is loaded, and the guest initialization agent enters an idle state. A full memory snapshot (\texttt{state.snap} and \texttt{mem.snap}) is exported to disk. When a new execution request arrives, \texttt{aegis-sandbox} restores the pre-warmed snapshot using copy-on-write (CoW) memory mapping:
 \begin{equation}
@@ -165,13 +171,14 @@ int handle_sys_enter(struct trace_event_raw_sys_enter *ctx) {
 \section{Experimental Evaluation}
 We evaluated \texttt{aegis-sandbox} on an Ubuntu 24.04 server equipped with an AMD EPYC 7763 CPU (64 cores, 2.45 GHz), 256 GB RAM, and Linux Kernel 6.8.
 
-\subsection{MicroVM Provisioning & Boot Latency}
+\subsection{MicroVM Provisioning \& Boot Latency}
 We measured the execution latency required to instantiate a fully functional Python 3.11 environment across four isolation paradigms over 1,000 trial runs.
 
-\begin{table}[h]
+\begin{table}[h!]
 \centering
-\caption{Sandbox Provisioning Boot Latency Benchmark}
+\caption{Sandbox Provisioning Boot Latency Benchmark Comparison}
 \label{tab:boot_benchmark}
+\vspace{4pt}
 \begin{tabular}{lcc}
 \toprule
 \textbf{Isolation Type} & \textbf{Mean Boot Time (ms)} & \textbf{P99 Latency (ms)} \\
@@ -186,10 +193,10 @@ QEMU/KVM Virtual Machine& 2,410.0 ms                   & 2,890.0 ms             
 \end{tabular}
 \end{table}
 
-As detailed in Table~\ref{tab:boot_benchmark}, restoring pre-warmed memory snapshots reduces microVM boot latency to **8.4 ms**, representing a **37x speedup over Docker** and a **286x speedup over standard QEMU virtual machines**.
+As detailed in Table~\ref{tab:boot_benchmark}, restoring pre-warmed memory snapshots reduces microVM boot latency to \textbf{8.4 ms}, representing a \textbf{37x speedup over Docker} and a \textbf{286x speedup over standard QEMU virtual machines}.
 
 \subsection{eBPF Filtering Overhead}
-We benchmarked Python computational workloads (NumPy matrix operations) inside \texttt{aegis-sandbox} with active eBPF syscall probes versus un-monitored host execution. The runtime execution overhead introduced by the eBPF tracepoint hooks was measured at **less than 1.8\%**.
+We benchmarked Python computational workloads (NumPy matrix operations) inside \texttt{aegis-sandbox} with active eBPF syscall probes versus un-monitored host execution. The runtime execution overhead introduced by the eBPF tracepoint hooks was measured at \textbf{less than 1.8\%}.
 
 \subsection{Security Penetration Testing Validation}
 We subjected \texttt{aegis-sandbox} to four simulated attack vectors (\textbf{T1}--\textbf{T4}):
@@ -205,7 +212,7 @@ Micro-virtualization technology was pioneered by AWS Firecracker~\cite{firecrack
 \section{Conclusion \& Future Work}
 \texttt{aegis-sandbox} provides a high-performance, zero-trust isolation engine for autonomous AI agent code execution. By combining Firecracker microVM memory snapshots with eBPF kernel enforcement and Cgroups v2 constraints, it eliminates the speed-security tradeoff—achieving sub-10ms boot times while neutralizing container escapes, SSRF metadata theft, and DoS attacks. 
 
-Future work will focus on integrating GPU hardware enclaves via **NVIDIA Confidential Computing** (H100/B200 TEEs) to protect model weights and activations during confidential GPU-accelerated agent execution.
+Future work will focus on integrating GPU hardware enclaves via \textbf{NVIDIA Confidential Computing} (H100/B200 TEEs) to protect model weights and activations during confidential GPU-accelerated agent execution.
 
 \begin{thebibliography}{99}
 \bibitem{prompt_injection} K. Greshake et al., ``Not What You'll Pay For: Indirect Prompt Injection Attacks on Large Language Models,'' in \emph{IEEE Workshop on Robust Malware Analysis (WOOT)}, 2023.
