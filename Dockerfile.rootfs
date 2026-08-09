@@ -1,0 +1,91 @@
+# Dockerfile.rootfs
+# Multi-Stage Alpine RootFS & MicroVM Image Builder for aegis-sandbox
+# Author: Kamran Saberifard
+# License: Apache 2.0
+
+# ------------------------------------------------------------------------------
+# Stage 1: Compile Statically-Linked Guest Agent Binary
+# ------------------------------------------------------------------------------
+FROM golang:1.22-alpine AS go-builder
+
+WORKDIR /build
+
+COPY guest/cmd/agent/main.go .
+
+# Compile static Go binary (CGO_ENABLED=0)
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -a -installsuffix cgo \
+    -ldflags="-s -w -extldflags '-static'" \
+    -o aegis-guest-agent main.go
+
+# ------------------------------------------------------------------------------
+# Stage 2: Prepare Alpine RootFS Environment
+# ------------------------------------------------------------------------------
+FROM alpine:3.20 AS rootfs-prep
+
+# Install Python 3.11, OpenRC, Coreutils, and Math/AI libraries
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    py3-numpy \
+    py3-scipy \
+    bash \
+    coreutils \
+    openrc \
+    e2fsprogs \
+    util-linux \
+    ca-certificates
+
+# Create runtime directories
+RUN mkdir -p /run /tmp /var/lib/aegis /etc/runlevels/default
+
+# Copy compiled guest agent binary
+COPY --from=go-builder /build/aegis-guest-agent /usr/local/bin/aegis-guest-agent
+RUN chmod +x /usr/local/bin/aegis-guest-agent
+
+# Configure OpenRC / Inittab to launch guest agent at microVM boot
+RUN echo "#!/bin/sh" > /etc/local.d/aegis-agent.start && \
+    echo "/usr/local/bin/aegis-guest-agent &" >> /etc/local.d/aegis-agent.start && \
+    chmod +x /etc/local.d/aegis-agent.start
+
+# Set root password to empty for serial console debugging
+RUN passwd -d root
+
+# ------------------------------------------------------------------------------
+# Stage 3: Package Filesystem into Raw ext4 Disk Image
+# ------------------------------------------------------------------------------
+FROM ubuntu:24.04 AS image-exporter
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    e2fsprogs \
+    rsync \
+    udev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /export
+
+# Copy prepared rootfs from Stage 2
+COPY --from=rootfs-prep / /rootfs-source
+
+# Build script that formats and copies rootfs into ext4 disk image
+RUN set -e && \
+    # 1. Allocate 512 MB raw image file
+    dd if=/dev/zero of=/export/alpine-python311.ext4 bs=1M count=512 && \
+    # 2. Format ext4 filesystem with 4K block size
+    mkfs.ext4 -F -b 4096 /export/alpine-python311.ext4 && \
+    # 3. Mount ext4 image and sync files from rootfs-source
+    mkdir -p /mnt/rootfs && \
+    mount -o loop /export/alpine-python311.ext4 /mnt/rootfs && \
+    rsync -aHAX --exclude=/proc --exclude=/sys --exclude=/dev --exclude=/mnt /rootfs-source/ /mnt/rootfs/ && \
+    # 4. Create essential dev nodes inside rootfs
+    mkdir -p /mnt/rootfs/dev /mnt/rootfs/proc /mnt/rootfs/sys /mnt/rootfs/mnt && \
+    mknod -m 600 /mnt/rootfs/dev/console c 5 1 && \
+    mknod -m 666 /mnt/rootfs/dev/null c 1 3 && \
+    mknod -m 666 /mnt/rootfs/dev/zero c 1 5 && \
+    mknod -m 666 /mnt/rootfs/dev/tty c 5 0 && \
+    # 5. Clean up and unmount
+    umount /mnt/rootfs
+
+CMD ["cp", "/export/alpine-python311.ext4", "/target/"]
